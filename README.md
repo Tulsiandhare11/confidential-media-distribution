@@ -73,8 +73,6 @@ allowed to see what, cryptographic signing, revocation, and the audit trail.
   but can be weakened by heavy re-compression or a photo of a screen.
 - OCR-based text redaction (license plates, documents) is designed but not
   enabled on the current Cloudinary plan.
-- View-limit enforcement is defined in the data model but not yet enforced.
-
 ## Running locally
 
 
