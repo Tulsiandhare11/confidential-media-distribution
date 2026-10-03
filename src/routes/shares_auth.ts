@@ -123,8 +123,11 @@ router.delete('/:shareId', async (req, res, next) => {
 router.get('/shared-with-me', async (req, res, next) => {
   try {
     const rows = await db.all(
-      `SELECT s.id AS "shareId", p.id AS "photoId", p.title, s.tier, s.expires_at
-       FROM shares s JOIN photos p ON p.id = s.photo_id
+      `SELECT s.id AS shareId, p.id AS photoId, p.title, s.tier, s.expires_at,
+       u.name AS "senderName", u.email AS "senderEmail"
+       FROM shares s
+       JOIN photos p ON p.id = s.photo_id
+       JOIN users u ON u.id = p.owner_id
        WHERE (s.viewer_id = ? OR lower(s.viewer_email) = lower(?))
          AND s.revoked = 0
          AND p.deleted = 0

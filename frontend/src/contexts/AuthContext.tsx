@@ -14,14 +14,16 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const STORAGE_KEY = 'vault_token';
 
 export function AuthProvider({ children }: {children: React.ReactNode;}) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<AuthStatus>('anonymous');
+  const [status, setStatus] = useState<AuthStatus>('loading');
 
   const logout = useCallback(() => {
     api.setAuthToken(null);
+    sessionStorage.removeItem(STORAGE_KEY);
     setToken(null);
     setUser(null);
     setStatus('anonymous');
@@ -37,18 +39,40 @@ export function AuthProvider({ children }: {children: React.ReactNode;}) {
     api.setAuthToken(response.token);
     setStatus('loading');
     try {
-      // /auth/me is the source of truth for who is signed in.
       const me = await api.getMe();
+      sessionStorage.setItem(STORAGE_KEY, response.token);
       setUser(me);
       setToken(response.token);
       setStatus('authenticated');
     } catch (error) {
       api.setAuthToken(null);
+      sessionStorage.removeItem(STORAGE_KEY);
       setToken(null);
       setUser(null);
       setStatus('anonymous');
       throw error;
     }
+  }, []);
+
+  // On first load (including refresh), try to restore a saved session.
+  useEffect(() => {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      setStatus('anonymous');
+      return;
+    }
+    api.setAuthToken(saved);
+    api.getMe()
+      .then((me) => {
+        setUser(me);
+        setToken(saved);
+        setStatus('authenticated');
+      })
+      .catch(() => {
+        api.setAuthToken(null);
+        sessionStorage.removeItem(STORAGE_KEY);
+        setStatus('anonymous');
+      });
   }, []);
 
   const login = useCallback(

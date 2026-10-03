@@ -18,7 +18,7 @@ import { CustodyTimeline } from '../components/CustodyTimeline';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
 import { StepUpModal } from '../components/StepUpModal';
-import { WatermarkOverlay } from '../components/WatermarkOverlay';
+
 
 type Phase = 'loading' | 'stepup' | 'image' | 'ready' | 'error';
 
@@ -142,10 +142,6 @@ export function SecureViewer() {
             {phase === 'ready' && imageUrl && viewer ?
             <>
                 <img src={imageUrl} alt={title} draggable={false} className="block max-h-[72vh] w-full select-none object-contain" />
-                <WatermarkOverlay name={viewer.name} email={viewer.email} reference={meta?.shareId ? `share ${meta.shareId}` : photoId} />
-                <div className="absolute bottom-3 left-3 rounded-lg bg-espresso-900/70 px-2.5 py-1.5 backdrop-blur">
-                  <p className="text-[11px] font-bold text-cream-100">Licensed to {viewer.name || viewer.email}</p>
-                </div>
               </> :
             phase === 'error' ?
             <div className="w-full max-w-md p-6">
