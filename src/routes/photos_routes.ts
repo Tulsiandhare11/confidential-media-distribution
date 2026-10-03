@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { createHash, randomBytes } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
 import { upload } from '../middleware/upload.js';
 import { uploadPhoto, ownerPreviewUrl } from '../services/cloudinary_service';
-import { wrapPhotoKey, aesEncrypt, signRecord, unsealSecretKey } from '../services/crypto_service';
+import { signRecord, unsealSecretKey } from '../services/crypto_service';
 import { perceptualHash } from '../services/hash_service';
 import { logEvent } from '../services/audit_service';
 
@@ -22,30 +20,34 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
     const sha256 = createHash('sha256').update(req.file.buffer).digest('hex');
     const phash = await perceptualHash(req.file.buffer);
 
-    const owner = await db.get<{ kem_public: string; dsa_secret_enc: string }>(
-      'SELECT kem_public, dsa_secret_enc FROM users WHERE id = ?', ownerId
+    const owner = await db.get<{ dsa_secret_enc: string }>(
+      'SELECT dsa_secret_enc FROM users WHERE id = ?',
+      ownerId
     );
     if (!owner) return res.status(404).json({ error: 'Owner not found' });
 
-    const kemPublicKey = Buffer.from(owner.kem_public, 'base64');
-    const { wrapped, aesKey } = wrapPhotoKey(kemPublicKey);
-    const { ciphertext, iv, tag } = aesEncrypt(req.file.buffer, aesKey);
-
-    const encFilename = `${randomBytes(16).toString('hex')}.enc`;
-    const encPath = path.join('storage', encFilename);
-    await writeFile(encPath, Buffer.concat([iv, tag, ciphertext]));
-
-    const dsaSecretKey = unsealSecretKey(owner.dsa_secret_enc);
-    const record = JSON.stringify({ sha256, ownerId, filename: encFilename, at: Date.now() });
-    const signature = signRecord(dsaSecretKey, record);
-
+    // Upload first, so the signed record can reference the Cloudinary asset
     const cloud = await uploadPhoto(req.file.buffer, { ownerId, title });
 
+    // Digital signature only (no encryption)
+    const dsaSecretKey = unsealSecretKey(owner.dsa_secret_enc);
+    const record = JSON.stringify({
+      sha256,
+      ownerId,
+      publicId: cloud.publicId,
+      at: Date.now(),
+    });
+    const signature = signRecord(dsaSecretKey, record);
+
     const info = await db.run(
-      `INSERT INTO photos (owner_id, title, cloud_public_id, enc_path, wrapped_key, sha256, phash, signature, faces_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ownerId, title, cloud.publicId,
-      encPath, wrapped.toString('base64'), sha256, phash, signature.toString('base64'),
+      `INSERT INTO photos (owner_id, title, cloud_public_id, sha256, phash, signature, faces_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ownerId,
+      title,
+      cloud.publicId,
+      sha256,
+      phash,
+      signature.toString('base64'),
       JSON.stringify(cloud.faces)
     );
 
@@ -67,7 +69,11 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
 router.get('/mine', async (req, res, next) => {
   try {
     const rows = await db.all<{
-      id: number; title: string; cloud_public_id: string; faces_json: string; created_at: number;
+      id: number;
+      title: string;
+      cloud_public_id: string;
+      faces_json: string;
+      created_at: number;
     }>(
       `SELECT id, title, cloud_public_id, faces_json, created_at
        FROM photos WHERE owner_id = ? AND deleted = 0 ORDER BY created_at DESC`,
@@ -92,7 +98,8 @@ router.delete('/:photoId', async (req, res, next) => {
   try {
     const photoId = Number(req.params.photoId);
     const photo = await db.get<{ id: number; owner_id: number }>(
-      'SELECT id, owner_id FROM photos WHERE id = ?', photoId
+      'SELECT id, owner_id FROM photos WHERE id = ?',
+      photoId
     );
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
     if (photo.owner_id !== req.user!.id) return res.status(403).json({ error: 'Not your photo' });
