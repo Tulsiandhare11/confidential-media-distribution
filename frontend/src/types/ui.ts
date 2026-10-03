@@ -1,0 +1,1 @@
+export type BadgeTone = 'safe' | 'review' | 'danger' | 'neutral' | 'accent';
