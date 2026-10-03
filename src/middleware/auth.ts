@@ -18,18 +18,16 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Not logged in' });
   }
   try {
     const payload = jwt.verify(header.slice(7), config.jwtSecret) as jwt.JwtPayload;
-    const row = db
-      .prepare('SELECT id, name, email, verified FROM users WHERE id = ?')
-      .get(Number(payload.sub)) as
-      | { id: number; name: string; email: string; verified: number }
-      | undefined;
+    const row = await db.get<{ id: number; name: string; email: string; verified: number }>(
+      'SELECT id, name, email, verified FROM users WHERE id = ?', Number(payload.sub)
+    );
     if (!row) return res.status(401).json({ error: 'User not found' });
     req.user = { ...row, verified: row.verified === 1 };
     next();

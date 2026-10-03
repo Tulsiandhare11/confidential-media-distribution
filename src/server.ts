@@ -30,6 +30,7 @@ app.use('/verify', verifyRoutes);
 app.use('/trace', traceRoutes);
 app.use('/step-up', stepupRoutes);
 app.use('/audit', auditRoutes);
+app.set('trust proxy', 1);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }), authRoutes);

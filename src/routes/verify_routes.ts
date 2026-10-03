@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireVerified } from '../middleware/auth';
 import { upload } from '../middleware/upload';
-import { sha256Hex, verifyRecord, unsealSecretKey } from '../services/crypto_service';
+import { sha256Hex } from '../services/crypto_service';
 import { perceptualHash, hammingDistanceHex } from '../services/hash_service';
 
 const router = Router();
@@ -18,25 +18,18 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
     const phash = await perceptualHash(req.file.buffer);
 
     // 1. Exact match: same hash exists in the vault
-    const exact = db
-      .prepare(
-        `SELECT p.id, p.title, p.sha256, p.signature, p.owner_id, u.name AS ownerName, u.dsa_public
-         FROM photos p JOIN users u ON u.id = p.owner_id
-         WHERE p.sha256 = ?`
-      )
-      .get(sha256) as
-      | { id: number; title: string; sha256: string; signature: string; owner_id: number; ownerName: string; dsa_public: string }
-      | undefined;
+    const exact = await db.get<{
+      id: number;
+      title: string;
+      ownerName: string;
+    }>(
+      `SELECT p.id, p.title, u.name AS "ownerName"
+       FROM photos p JOIN users u ON u.id = p.owner_id
+       WHERE p.sha256 = ? AND p.deleted = 0`,
+      sha256
+    );
 
     if (exact) {
-      const record = JSON.stringify({
-        sha256: exact.sha256,
-        ownerId: exact.owner_id,
-        // NOTE: filename/at aren't recoverable here for a byte-for-byte record replay unless stored;
-        // signature check below validates against sha256 match alone as a simplified proof.
-      });
-      // Simplified: since we don't store the exact original record string, treat sha256 match
-      // itself (over the whole file) as strong proof; report signature as "on file" rather than re-verifying bit-for-bit.
       return res.json({
         result: 'exact_match',
         message: 'This is an untouched original from the vault.',
@@ -46,27 +39,34 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
       });
     }
 
-    // 2. Perceptual match: a modified/re-compressed copy of something in the vault
-    const all = db.prepare('SELECT id, title, phash, owner_id FROM photos').all() as
-      { id: number; title: string; phash: string | null; owner_id: number }[];
+    // 2. Perceptual match: a modified or re-compressed copy of something in the vault
+    const all = await db.all<{
+      id: number;
+      title: string;
+      phash: string | null;
+      ownerName: string;
+    }>(
+      `SELECT p.id, p.title, p.phash, u.name AS "ownerName"
+       FROM photos p JOIN users u ON u.id = p.owner_id
+       WHERE p.deleted = 0`
+    );
 
-    let best: { id: number; title: string; distance: number; owner_id: number } | null = null;
+    let best: { id: number; title: string; distance: number; ownerName: string } | null = null;
     for (const row of all) {
       if (!row.phash) continue;
       const distance = hammingDistanceHex(phash, row.phash);
       if (!best || distance < best.distance) {
-        best = { id: row.id, title: row.title, distance, owner_id: row.owner_id };
+        best = { id: row.id, title: row.title, distance, ownerName: row.ownerName };
       }
     }
 
     if (best && best.distance <= MATCH_THRESHOLD) {
-      const owner = db.prepare('SELECT name FROM users WHERE id = ?').get(best.owner_id) as { name: string };
       return res.json({
         result: 'modified_copy',
         message: 'This looks like an edited or re-compressed copy of a vault photo.',
         photoId: best.id,
         title: best.title,
-        owner: owner.name,
+        owner: best.ownerName,
         similarity: `${Math.round(((64 - best.distance) / 64) * 100)}%`,
       });
     }

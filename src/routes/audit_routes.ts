@@ -6,19 +6,36 @@ import { getTimeline } from '../services/audit_service';
 const router = Router();
 router.use(requireAuth, requireVerified);
 
-router.get('/:photoId', (req, res) => {
-  const photoId = Number(req.params.photoId);
-  const photo = db.prepare('SELECT owner_id FROM photos WHERE id = ?').get(photoId) as
-    | { owner_id: number }
-    | undefined;
-  if (!photo) return res.status(404).json({ error: 'Photo not found' });
- const isOwner = photo.owner_id === req.user!.id;
-const hasShare = db.prepare(
-  `SELECT 1 FROM shares WHERE photo_id = ? AND (viewer_id = ? OR (viewer_id IS NULL AND viewer_email = ?)) AND revoked = 0`
-).get(photoId, req.user!.id, req.user!.email);
-if (!isOwner && !hasShare) return res.status(403).json({ error: 'Not authorized' });
+router.get('/:photoId', async (req, res, next) => {
+  try {
+    const photoId = Number(req.params.photoId);
+    if (!Number.isInteger(photoId)) {
+      return res.status(400).json({ error: 'Invalid photo id' });
+    }
 
-  res.json({ timeline: getTimeline(photoId) });
+    const photo = await db.get<{ owner_id: number }>(
+      'SELECT owner_id FROM photos WHERE id = ?', photoId
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    const isOwner = photo.owner_id === req.user!.id;
+
+    const hasShare = await db.get<{ one: number }>(
+      `SELECT 1 AS one FROM shares
+       WHERE photo_id = ?
+         AND (viewer_id = ? OR (viewer_id IS NULL AND lower(viewer_email) = lower(?)))
+         AND revoked = 0`,
+      photoId, req.user!.id, req.user!.email
+    );
+
+    if (!isOwner && !hasShare) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    res.json({ timeline: await getTimeline(photoId) });
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;
