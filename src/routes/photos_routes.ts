@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
-import { upload } from '../middleware/upload';
+import { upload } from '../middleware/upload.js';
 import { uploadPhoto, ownerPreviewUrl } from '../services/cloudinary_service';
 import { randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';

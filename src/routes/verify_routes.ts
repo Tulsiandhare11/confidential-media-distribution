@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db';
+import { db } from '../db.js';
 import { requireAuth, requireVerified } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { sha256Hex, verifyRecord, unsealSecretKey } from '../services/crypto_service';

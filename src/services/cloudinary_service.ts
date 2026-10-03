@@ -1,5 +1,5 @@
 
-import '../config';
+import '../config.js';
 import { v2 as cloudinary } from 'cloudinary';
 
 cloudinary.config({ secure: true });

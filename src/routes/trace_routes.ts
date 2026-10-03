@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
-import { upload } from '../middleware/upload';
+import { upload } from '../middleware/upload.js';
 import { extractId } from '../services/stego_service';
 
 const router = Router();
