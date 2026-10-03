@@ -1,76 +1,93 @@
+# Confidential Media Distribution
 
-# Photo Vault — Confidential Media Distribution
-
-A vault for sharing sensitive photos safely. Owners decide exactly what each recipient sees, every shared copy is watermarked and traceable, and originals are protected with post-quantum cryptography.
-
-## Track
-
-Track 3 — Your Media-Savvy Startup (HackIndia x Cloudinary)
+Control how sensitive media is distributed, viewed, and traced.
 
 ## The problem
 
-Photos shared over WhatsApp, email, or Drive links offer no real control once sent — no way to limit who sees the real version, no way to trace a leak back to a specific recipient, and no way to prove an image is authentic if it's later altered or misused.
+Once you share a photo, you lose control of it. If it leaks, there's no way to
+know who leaked it, or to prove the original wasn't altered. Teams who handle
+sensitive visual material — pre-launch product photos, press screeners, legal
+evidence — currently rely on email attachments or Drive links, with zero
+accountability if something gets out.
 
-## What we built
+## What this does
 
-- **Tiered sharing**: owners share a photo at full quality, blurred, or redacted — chosen per recipient, not as a global setting.
-- **Per-viewer watermarking**: every delivered copy carries the viewer's identity, so a leaked copy can be traced back to who it was shared with.
-- **Revocation**: access can be pulled at any time; revoked shares stop resolving immediately.
-- **Step-up confirmation**: viewing a full-quality share requires a recent confirmed code, not just being logged in.
-- **Verify & Trace**: anyone can check whether an image matches a registered original, using Cloudinary's perceptual hashing and content analysis.
-- **Post-quantum protection**: originals are signed (ML-DSA / Dilithium) and keys are sealed using ML-KEM (Kyber) — the encryption and signing layer is quantum-resistant, not just today's standard.
+Share a confidential image with someone, and if it leaks, know exactly who
+leaked it, and prove whether it was altered.
 
-## How Cloudinary is used
+- **Access tiers** — Full, Blurred, Heavily redacted, or Public-safe, each a
+  live Cloudinary transformation generated on demand, not a pre-rendered file.
+- **Step-up verification** — viewing a Full-access copy requires a one-time
+  code, even on an already-logged-in device.
+- **Invisible leak tracing** — every delivered copy carries a hidden,
+  per-recipient signature embedded in the pixel data. A leaked screenshot can
+  be traced back to the exact recipient and share.
+- **Tamper-proof originals** — every upload is hashed and signed with a
+  post-quantum signature (ML-DSA) at the moment of capture, so authenticity
+  can be verified later.
+- **Revocation** — access can be cut off at any time, instantly.
+- **Audit trail** — a signed, timestamped history of every upload, share,
+  view, and revoke on an asset.
 
-- Upload, storage, and authenticated (non-public) delivery of every asset
-- AI-driven face/content detection, used to drive per-share blur regions
-- Perceptual hashing (phash) and content analysis for the Verify & Trace feature
-- Dynamic, per-viewer watermark overlays generated at delivery time, not baked into a static file
+## Who it's for
+
+PR and marketing teams protecting pre-launch assets, legal teams sharing
+evidence with opposing counsel, studios distributing press screeners — anyone
+sharing a photo they can't afford to have leak without consequence.
+
+**Division of responsibility:** Cloudinary is the perception and rendering
+engine — it detects what's sensitive in an image and renders every
+access-level version live. The backend is the policy and proof layer — who's
+allowed to see what, cryptographic signing, revocation, and the audit trail.
 
 ## Tech stack
 
-- Backend: Node.js, Express, TypeScript, SQLite
-- Frontend: React
-- Auth: email + password, email verification via Resend
-- Crypto: ML-KEM (Kyber) for key encapsulation, ML-DSA (Dilithium) for signing
-- Media: Cloudinary (upload, transformations, AI analysis, authenticated delivery)
+| Layer | Technology |
+|---|---|
+| Frontend | React, Vite, TypeScript, Tailwind CSS |
+| Backend | Node.js, Express, TypeScript |
+| Database | PostgreSQL (Supabase) |
+| Media | Cloudinary (face detection, transformations, authenticated delivery) |
+| Cryptography | ML-KEM (key wrapping), ML-DSA (signing), AES-256-GCM (encryption) |
+| Email | Resend |
+| Deployment | Vercel (frontend), Render (backend) |
+
+## Core flow
+
+1. **Upload** — image is encrypted, signed, and sent to Cloudinary as a
+   private, authenticated asset. Faces are detected automatically.
+2. **Review** — owner marks which faces to protect and sets an access level.
+3. **Share** — pick a recipient, access tier, and expiry. The share record is
+   signed.
+4. **Controlled delivery** — the recipient logs in, and for Full access,
+   confirms a step-up code. The backend issues a short-lived signed URL with
+   that tier's transformation and an invisible per-recipient watermark.
+5. **Leak trace** — upload any leaked copy. The hidden watermark identifies
+   exactly who it was issued to.
+6. **Verify** — check whether an image is an untouched original, a modified
+   copy, or doesn't match anything in the system.
+
+## Known limitations
+
+- The invisible watermark is pixel-based and survives direct saves and crops,
+  but can be weakened by heavy re-compression or a photo of a screen.
+- OCR-based text redaction (license plates, documents) is designed but not
+  enabled on the current Cloudinary plan.
+- View-limit enforcement is defined in the data model but not yet enforced.
 
 ## Running locally
 
-### Backend
 
+# Backend
 cd vault_backend
 npm install
-cp .env.example .env   # fill in Cloudinary, Resend, JWT secret
 npm run dev
 
-
-### Frontend
-
+# Frontend
 cd vault_frontend
 npm install
 npm run dev
 
-## Environment variables (backend)
 
-
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-RESEND_API_KEY=
-MAIL_FROM=
-JWT_SECRET=
-
-
-## Known limitations
-
-- Face/content-based detection depends on Cloudinary's analysis accuracy and may miss heavily AI-altered images.
-- Verify & Trace proves similarity to a registered original; it does not claim to detect every possible manipulation.
-
-
-## Team
-
-AxiNova
-## Team Members
-Tulsi Andhare
-GauravKumar Ramina 
+Set `DATABASE_URL`, `JWT_SECRET`, `MASTER_KEY`, `CLOUDINARY_URL`,
+`RESEND_API_KEY`, and `CLIENT_ORIGIN` in `vault_backend/.env`.
