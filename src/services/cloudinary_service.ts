@@ -36,7 +36,6 @@ export function uploadPhoto(
         tags: ['vault', `owner-${opts.ownerId}`],
         context: { owner_id: String(opts.ownerId), title: opts.title },
         faces: true,
-        ocr: 'adv_ocr',
         unique_filename: true,
         use_filename: false,
       },
