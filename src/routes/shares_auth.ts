@@ -41,24 +41,27 @@ router.post('/', async (req, res, next) => {
     );
 
     const expiresAt = expiresInHours ? Date.now() + expiresInHours * 3600_000 : null;
+   const existingShare = await db.get<{ id: number }>(
+  `SELECT id FROM shares WHERE photo_id = ? AND (
+     (viewer_id IS NOT NULL AND viewer_id = ?) OR
+     (viewer_id IS NULL AND viewer_email = ?)
+   )`,
+  photoId, existingViewer?.id ?? -1, viewerEmail
+);
 
-    await db.run(
-      `INSERT INTO shares (photo_id, viewer_id, viewer_email, tier, blur_faces_json, revoked, expires_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?)
-       ON CONFLICT(photo_id, viewer_email) DO UPDATE SET
-         viewer_id = excluded.viewer_id,
-         tier = excluded.tier,
-         blur_faces_json = excluded.blur_faces_json,
-         revoked = 0,
-         expires_at = excluded.expires_at`,
-      photoId,
-      existingViewer?.id ?? null,
-      viewerEmail,
-      tier,
-      JSON.stringify(blurFaceIndexes ?? []),
-      expiresAt
-    );
-
+if (existingShare) {
+  await db.run(
+    `UPDATE shares SET tier = ?, blur_faces_json = ?, revoked = 0, expires_at = ? WHERE id = ?`,
+    tier, JSON.stringify(blurFaceIndexes ?? []), expiresAt, existingShare.id
+  );
+} else {
+  await db.run(
+    `INSERT INTO shares (photo_id, viewer_id, viewer_email, tier, blur_faces_json, revoked, expires_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?)`,
+    photoId, existingViewer?.id ?? null, viewerEmail, tier, JSON.stringify(blurFaceIndexes ?? []), expiresAt
+  );
+}
+   
     await logEvent(photoId, 'shared', req.user!.id, { viewerEmail, tier });
 
     // don't let a mail failure break the share
