@@ -64,9 +64,10 @@ function imageOptions(
   extra: Partial<ImageOpts> = {}
 ): ImageOpts {
   const strong = tier === 'redacted' || tier === 'public_safe';
+  const effectiveBlurRegions = tier === 'full' ? undefined : blurRegions;
   return {
-    blurAll: tier !== 'full' && !blurRegions,
-    blurRegions,
+    blurAll: tier !== 'full' && !effectiveBlurRegions,
+    blurRegions: effectiveBlurRegions,
     lowQuality: tier === 'public_safe',
     redactText: strong,
     removeObjects: strong ? removeObjects : [],
@@ -74,7 +75,6 @@ function imageOptions(
     ...extra,
   };
 }
-
 // Metadata only (tier, type, title). Shared viewers never receive a Cloudinary URL.
 router.get('/:photoId', async (req, res, next) => {
   try {
