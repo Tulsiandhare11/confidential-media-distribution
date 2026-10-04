@@ -8,6 +8,7 @@ import type {
   Share,
   SharedWithMe,
   User,
+   MediaType,
   VerifyResponse,
   VerifyResultType,
   ViewMeta } from
@@ -180,11 +181,12 @@ export async function deletePhoto(photoId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 export async function createShare(input: CreateShareInput): Promise<Share> {
   const body: Json = {
-    photoId: input.photoId,
+     photoId: input.photoId,
     viewerEmail: input.viewerEmail,
     tier: TIER_API_VALUES[input.tier],
     blurFaceIndexes: input.blurFaceIndexes,
-    expiresInHours: input.expiresInHours
+    expiresInHours: input.expiresInHours,
+    removeObjects: input.removeObjects
   };
   if (input.viewLimit !== null) body.viewLimit = input.viewLimit;
   const data = obj(await request('/shares', { method: 'POST', body }));
@@ -214,20 +216,31 @@ export async function getViewMeta(photoId: string): Promise<ViewMeta> {
     await request(`/view/${encodeURIComponent(photoId)}`, { logoutOn401: false })
   );
   const share = obj(data.share);
-  return {
+    return {
     url: str(data.url),
     tier: normalizeTier(first(data, 'tier') ?? share.tier),
     title: str(first(data, 'title', 'photoTitle')),
     shareId: str(first(data, 'shareId') ?? first(share, 'id', '_id')),
-    expiresAt: str(first(data, 'expiresAt') ?? share.expiresAt)
+    expiresAt: isoTime(first(data, 'expiresAt') ?? share.expiresAt),
+    mediaType: normalizeMediaType(data.mediaType)
   };
 }
-
+function normalizeMediaType(value: unknown): MediaType {
+  return str(value).toLowerCase() === 'video' ? 'video' : 'image';
+}
+function isoTime(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isFinite(n) && n > 1e11) return new Date(n).toISOString();
+  return str(value);
+}
 /** Fetches image bytes with the Authorization header. Use URL.createObjectURL on the result. */
 export async function getViewImage(photoId: string): Promise<Blob> {
   const res = await send(`/view/${encodeURIComponent(photoId)}/image`, { logoutOn401: false });
   return res.blob();
 }
+/** Owner-only: renders one clearance tier of an image as a live Cloudinary preview. */
+
 
 export async function requestStepUp(photoId: string): Promise<void> {
   await request(`/step-up/${encodeURIComponent(photoId)}/request`, {
@@ -350,6 +363,8 @@ function normalizePhoto(raw: unknown): Photo {
     createdAt: str(first(o, 'createdAt', 'created_at', 'uploadedAt')),
     recipientCount: num(first(o, 'recipientCount', 'recipients', 'shareCount', 'share_count')),
     viewCount: num(first(o, 'viewCount', 'views', 'view_count')),
+     mediaType: normalizeMediaType(first(o, 'mediaType', 'media_type')),
+    previewUrl: str(first(o, 'previewUrl', 'preview_url')),
     analysis: {
       faces: normalizeFaces(first(a, 'faces') ?? first(o, 'faces', 'faceBoxes'), imageWidth, imageHeight),
       textRegions: num(first(a, 'textRegions', 'text_regions', 'ocr') ?? first(o, 'textRegions')),

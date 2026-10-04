@@ -10,16 +10,22 @@ import { ErrorState } from '../ErrorState';
 interface ShareFormProps {
   photoId: string;
   protectedFaceIndexes: number[];
+  isVideo?: boolean;
   onShared: () => void;
 }
 
-export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareFormProps) {
+export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onShared }: ShareFormProps) {
   const [email, setEmail] = useState('');
   const [tier, setTier] = useState<AccessTier>('blurred');
   const [expiresInHours, setExpiresInHours] = useState(72);
   const [viewLimit, setViewLimit] = useState<number | null>(null);
+  const [removeObjects, setRemoveObjects] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const strongTier = tier === 'redacted' || tier === 'public_safe';
+  const showRemoval = !isVideo && strongTier;
+  const removal = showRemoval ? removeObjects.trim() : '';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +37,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
         viewerEmail: email.trim(),
         tier,
         blurFaceIndexes: protectedFaceIndexes,
+        removeObjects: removal || undefined,
         expiresInHours,
         viewLimit
       });
@@ -64,7 +71,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
             className="field mt-1.5" />
-          
+
         </div>
 
         <fieldset>
@@ -78,7 +85,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
                   className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition-[border-color,box-shadow,background-color] duration-150 ${
                   selected ? 'glow-active border-terracotta bg-cream-50' : 'border-cream-300 hover:border-taupe-300'}`
                   }>
-                  
+
                   <input
                     type="radio"
                     name="tier"
@@ -86,7 +93,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
                     checked={selected}
                     onChange={() => setTier(t.value)}
                     className="mt-1 accent-espresso" />
-                  
+
                   <span className="min-w-0">
                     <span className="flex items-center gap-1.5 text-sm font-extrabold text-ink">
                       {t.label}
@@ -100,6 +107,25 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
           </div>
         </fieldset>
 
+        {showRemoval &&
+        <div>
+            <label htmlFor="remove-objects" className="text-sm font-bold text-ink">
+              Objects for Cloudinary AI to remove <span className="font-semibold text-taupe-600">(optional)</span>
+            </label>
+            <input
+            id="remove-objects"
+            value={removeObjects}
+            maxLength={120}
+            onChange={(e) => setRemoveObjects(e.target.value)}
+            placeholder="license plates, name badge"
+            className="field mt-1.5" />
+
+            <p className="mt-1.5 text-xs text-taupe-700">
+              Separate items with commas. They are removed from this recipient's copy.
+            </p>
+          </div>
+        }
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="expiry" className="text-sm font-bold text-ink">
@@ -111,7 +137,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
                 value={expiresInHours}
                 onChange={(e) => setExpiresInHours(Number(e.target.value))}
                 className="field appearance-none pr-9">
-                
+
                 {expiryOptions.map((o) =>
                 <option key={o.hours} value={o.hours}>
                     {o.label}
@@ -131,7 +157,7 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
                 value={viewLimit ?? ''}
                 onChange={(e) => setViewLimit(e.target.value === '' ? null : Number(e.target.value))}
                 className="field appearance-none pr-9">
-                
+
                 {viewLimitOptions.map((o) =>
                 <option key={o.label} value={o.value ?? ''}>
                     {o.label}
@@ -144,10 +170,15 @@ export function ShareForm({ photoId, protectedFaceIndexes, onShared }: ShareForm
         </div>
 
         <p className="text-xs text-taupe-700">
-          {protectedFaceIndexes.length > 0 ?
-          `${protectedFaceIndexes.length} protected ${protectedFaceIndexes.length === 1 ? 'face' : 'faces'} will be blurred in this copy.` :
-          'No faces are protected in this copy.'}{' '}
-          Every copy carries a watermark unique to this recipient.
+          {isVideo ?
+          'Your recipient\u2019s name and share ID will be shown on their copy of the video.' :
+          <>
+              {protectedFaceIndexes.length > 0 ?
+            `${protectedFaceIndexes.length} protected ${protectedFaceIndexes.length === 1 ? 'face' : 'faces'} will be blurred in this copy.` :
+            'No faces are protected in this copy.'}{' '}
+              {removal && `Cloudinary AI will remove: ${removal}. `}
+              Every copy carries a watermark unique to this recipient.
+            </>}
         </p>
 
         {error && <ErrorState message={error} compact />}

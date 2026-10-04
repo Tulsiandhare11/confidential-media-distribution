@@ -19,7 +19,6 @@ import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
 import { StepUpModal } from '../components/StepUpModal';
 
-
 type Phase = 'loading' | 'stepup' | 'image' | 'ready' | 'error';
 
 function needsStepUp(error: unknown) {
@@ -36,10 +35,14 @@ export function SecureViewer() {
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<User | null>(null);
   const [meta, setMeta] = useState<ViewMeta | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
+
+  const isVideo = meta?.mediaType === 'video';
+  // The backend reports share ID 0 when the owner views their own asset
+  const isOwnerCopy = meta?.shareId === '0';
 
   const sendCode = useCallback(async () => {
     setSending(true);
@@ -53,13 +56,13 @@ export function SecureViewer() {
     }
   }, [photoId]);
 
-  const loadImage = useCallback(async () => {
+  const loadMedia = useCallback(async () => {
     setPhase('image');
     try {
       const blob = await getViewImage(photoId);
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       urlRef.current = URL.createObjectURL(blob);
-      setImageUrl(urlRef.current);
+      setMediaUrl(urlRef.current);
       setPhase('ready');
     } catch (e) {
       setError(errorMessage(e));
@@ -82,13 +85,16 @@ export function SecureViewer() {
         );
         if (cancelled) return;
         setViewer(me);
-        const resolved: ViewMeta = metaResult ?? { url: '', tier: 'full', title: '', shareId: '', expiresAt: '' };
+        const resolved: ViewMeta = metaResult ?? {
+          url: '', tier: 'full', title: '', shareId: '', expiresAt: '', mediaType: 'image'
+        };
         setMeta(resolved);
-        if (resolved.tier === 'full') {
+        // Owners never need a step-up code for their own asset
+        if (resolved.tier === 'full' && resolved.shareId !== '0') {
           setPhase('stepup');
           sendCode();
         } else {
-          loadImage();
+          loadMedia();
         }
       } catch (e) {
         if (cancelled) return;
@@ -99,7 +105,7 @@ export function SecureViewer() {
     return () => {
       cancelled = true;
     };
-  }, [photoId, sendCode, loadImage]);
+  }, [photoId, sendCode, loadMedia]);
 
   useEffect(
     () => () => {
@@ -113,14 +119,18 @@ export function SecureViewer() {
     try {
       setMeta(await getViewMeta(photoId));
     } catch {
-
-      // Metadata refresh is best-effort; the image request below is authoritative.
-    }await loadImage();
+      // Metadata refresh is best-effort; the media request below is authoritative.
+    }
+    await loadMedia();
   };
 
   const tier = meta ? tierMeta(meta.tier) : null;
   const title = meta?.title || fallbackTitle || 'Secure asset';
   const countdown = meta ? formatCountdown(meta.expiresAt, now) : null;
+
+  const loadingText = isVideo ?
+  'Preparing your watermarked video… the first view can take up to 30 seconds' :
+  'Opening secure copy…';
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8 lg:px-10 lg:py-10">
@@ -134,28 +144,38 @@ export function SecureViewer() {
       </header>
 
       <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="surface-card overflow-hidden p-3" aria-label="Secure image">
+        <section className="surface-card overflow-hidden p-3" aria-label="Secure media">
           <div
             className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-[14px] bg-espresso-900"
             onContextMenu={(e) => e.preventDefault()}>
-            
-            {phase === 'ready' && imageUrl && viewer ?
-            <>
-                <img src={imageUrl} alt={title} draggable={false} className="block max-h-[72vh] w-full select-none object-contain" />
-              </> :
+
+            {phase === 'ready' && mediaUrl && viewer ?
+            isVideo ?
+            <video
+              src={mediaUrl}
+              controls
+              playsInline
+              preload="auto"
+              controlsList="nodownload noremoteplayback"
+              disablePictureInPicture
+              onContextMenu={(e) => e.preventDefault()}
+              className="block max-h-[72vh] w-full bg-black object-contain" /> :
+
+            <img src={mediaUrl} alt={title} draggable={false} className="block max-h-[72vh] w-full select-none object-contain" /> :
+
             phase === 'error' ?
             <div className="w-full max-w-md p-6">
                 <ErrorState message={error ?? 'This asset could not be opened.'} />
               </div> :
 
-            <div className="flex flex-col items-center gap-3 text-cream-200">
+            <div className="flex flex-col items-center gap-3 px-6 text-center text-cream-200">
                 {phase === 'stepup' ?
               <LockKeyholeIcon className="h-8 w-8" aria-hidden /> :
 
               <LoaderCircleIcon className="h-6 w-6 animate-spin" aria-hidden />
               }
                 <p className="text-sm font-semibold">
-                  {phase === 'stepup' ? 'Locked until you confirm your identity' : 'Opening secure copy…'}
+                  {phase === 'stepup' ? 'Locked until you confirm your identity' : loadingText}
                 </p>
               </div>
             }
@@ -179,10 +199,14 @@ export function SecureViewer() {
                 <dd className="font-bold text-ink">{tier?.label ?? '—'}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-taupe-700">Expiry</dt>
-                <dd className="mono text-xs text-ink">{countdown?.label ?? '—'}</dd>
+                <dt className="text-taupe-700">Type</dt>
+                <dd className="font-bold text-ink">{isVideo ? 'Video' : 'Image'}</dd>
               </div>
-              {meta?.shareId &&
+              <div className="flex justify-between gap-3">
+                <dt className="text-taupe-700">Expiry</dt>
+                <dd className="mono text-xs text-ink">{isOwnerCopy ? 'None (owner)' : countdown?.label ?? '—'}</dd>
+              </div>
+              {meta?.shareId && !isOwnerCopy &&
               <div className="flex justify-between gap-3">
                   <dt className="text-taupe-700">Share ID</dt>
                   <dd className="mono truncate text-xs text-ink">{meta.shareId}</dd>
@@ -191,7 +215,9 @@ export function SecureViewer() {
             </dl>
             <p className="mt-4 flex items-start gap-2 rounded-xl bg-sage-50 p-3 text-xs font-semibold text-sage-700">
               <ShieldCheckIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              This copy is watermarked to you. If it leaks, it can be traced back to this view.
+              {isVideo ?
+              'Your name and share ID are shown on this video. If it leaks, it can be traced back to this view.' :
+              'This copy is watermarked to you. If it leaks, it can be traced back to this view.'}
             </p>
           </section>
 

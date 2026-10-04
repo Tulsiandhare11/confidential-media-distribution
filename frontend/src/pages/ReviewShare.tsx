@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeftIcon, LoaderCircleIcon } from 'lucide-react';
+import { ArrowLeftIcon, FilmIcon, LoaderCircleIcon } from 'lucide-react';
 import { getMyPhotos, getPhotoShares } from '../api';
 import type { Photo } from '../types/api';
 import { useApiResource } from '../hooks/useApiResource';
@@ -27,6 +27,8 @@ export function ReviewShare() {
   }, [photoId]);
 
   const shares = useApiResource(() => getPhotoShares(photoId), [photoId]);
+
+  const isVideo = photo.data?.mediaType === 'video';
 
   const [protectedFaces, setProtectedFaces] = useState<Set<number>>(new Set());
   useEffect(() => {
@@ -67,7 +69,7 @@ export function ReviewShare() {
             <div className="min-w-0">
               <h1 className="truncate text-3xl font-extrabold tracking-tight text-ink">{photo.data.title}</h1>
               <p className="mono mt-1 truncate text-xs text-taupe-600" title={photo.data.sha256}>
-                sha256 {shortHash(photo.data.sha256, 20)}
+                {isVideo ? 'video · ' : ''}sha256 {shortHash(photo.data.sha256, 20)}
               </p>
             </div>
             <StatusBadge tone={photoStatusMeta(photo.data.status).tone}>{photoStatusMeta(photo.data.status).label}</StatusBadge>
@@ -75,14 +77,31 @@ export function ReviewShare() {
 
           <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-6">
-              <FaceProtectionEditor photo={photo.data} protectedFaces={protectedFaces} onToggle={toggleFace} />
+              {isVideo ?
+            <section className="surface-card p-6">
+                  <h2 className="flex items-center gap-2 text-lg font-extrabold text-ink">
+                    <FilmIcon className="h-5 w-5" aria-hidden /> Video protection
+                  </h2>
+                  <p className="mt-2 text-sm text-taupe-700">
+                    Videos are protected as a whole. The Blurred tier blurs the entire frame, Redacted pixelates it and lowers
+                    the resolution, and every tier shows the recipient's name and share ID on screen so any leak points
+                    back to them. Face-by-face selection and object removal are available for images only.
+                  </p>
+                </section> :
+
+            <FaceProtectionEditor photo={photo.data} protectedFaces={protectedFaces} onToggle={toggleFace} />
+            }
               <RecipientList shares={shares.data} loading={shares.loading} error={shares.error} onReload={shares.reload} />
               <section className="surface-card p-6">
                 <CustodyTimeline photoId={photo.data.id} collapsible />
               </section>
             </div>
             <div className="lg:sticky lg:top-8">
-              <ShareForm photoId={photo.data.id} protectedFaceIndexes={protectedList} onShared={shares.reload} />
+              <ShareForm
+              photoId={photo.data.id}
+              protectedFaceIndexes={isVideo ? [] : protectedList}
+              isVideo={isVideo}
+              onShared={shares.reload} />
             </div>
           </div>
         </>

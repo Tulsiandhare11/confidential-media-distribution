@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { EyeIcon, LoaderCircleIcon, Trash2Icon, UsersIcon } from 'lucide-react';
+import { EyeIcon, FilmIcon, LoaderCircleIcon, Trash2Icon, UsersIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Photo } from '../../types/api';
 import { photoStatusMeta, shortHash } from '../../utils/format';
@@ -12,6 +12,7 @@ export function AssetCard({ photo, onDeleted }: {photo: Photo; onDeleted?: () =>
   const status = photoStatusMeta(photo.status);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const isVideo = photo.mediaType === 'video';
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -37,14 +38,23 @@ export function AssetCard({ photo, onDeleted }: {photo: Photo; onDeleted?: () =>
       to={`/review/${photo.id}`}
       state={{ photo }}
       className="surface-card group relative flex flex-col overflow-hidden transition-transform duration-200 ease-out hover:-translate-y-0.5">
-      
+
       <div className="relative aspect-[4/3] overflow-hidden bg-cream-200">
-        <AuthImage photoId={photo.id} alt={photo.title} />
+        <AuthImage
+          photoId={photo.id}
+          alt={photo.title}
+          mediaType={photo.mediaType}
+          posterUrl={photo.previewUrl} />
         <div className="absolute left-3 top-3">
           <StatusBadge tone={status.tone} className="bg-opacity-95 shadow-sm">
             {status.label}
           </StatusBadge>
         </div>
+        {isVideo &&
+        <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-extrabold text-white">
+            <FilmIcon className="h-3 w-3" aria-hidden /> Video
+          </span>
+        }
         <button
           type="button"
           onClick={handleDelete}
@@ -56,7 +66,7 @@ export function AssetCard({ photo, onDeleted }: {photo: Photo; onDeleted?: () =>
           'bg-brick-600 text-white' :
           'bg-cream-50/95 text-taupe-700 hover:bg-brick-50 hover:text-brick-700'}`
           }>
-          
+
           {deleting ?
           <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" aria-hidden /> :
 

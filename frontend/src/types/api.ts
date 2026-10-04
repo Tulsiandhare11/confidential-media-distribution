@@ -1,4 +1,5 @@
 export type AccessTier = 'full' | 'blurred' | 'redacted' | 'public_safe';
+export type MediaType = 'image' | 'video';
 
 export interface User {
   id: string;
@@ -35,6 +36,8 @@ export interface Photo {
   createdAt: string;
   recipientCount: number;
   viewCount: number;
+  mediaType: MediaType;
+  previewUrl: string;
   analysis: PhotoAnalysis;
 }
 
@@ -68,6 +71,7 @@ export interface CreateShareInput {
   blurFaceIndexes: number[];
   expiresInHours: number;
   viewLimit: number | null;
+  removeObjects?: string;
 }
 
 export interface ViewMeta {
@@ -76,6 +80,7 @@ export interface ViewMeta {
   title: string;
   shareId: string;
   expiresAt: string;
+  mediaType: MediaType;
 }
 
 export interface AuditEvent {

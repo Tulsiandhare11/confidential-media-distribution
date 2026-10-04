@@ -4,6 +4,7 @@ import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
 import { logEvent } from '../services/audit_service';
 import { sendShareNotification } from '../services/mail_service';
+import { parseRemoveObjects } from '../services/redaction_prompts';
 
 const router = Router();
 router.use(requireAuth, requireVerified);
@@ -14,6 +15,7 @@ const shareSchema = z.object({
   tier: z.enum(['full', 'blurred', 'redacted', 'public_safe']),
   blurFaceIndexes: z.array(z.number().int()).optional(),
   expiresInHours: z.number().int().positive().optional(),
+  removeObjects: z.string().max(200).optional(),
 });
 
 // Create or update a share
@@ -23,6 +25,11 @@ router.post('/', async (req, res, next) => {
     if (!p.success) return res.status(400).json({ error: p.error.issues[0].message });
     const { photoId, tier, blurFaceIndexes, expiresInHours } = p.data;
     const viewerEmail = p.data.viewerEmail.trim().toLowerCase();
+
+    // AI object removal only applies to the two strongest tiers
+    const removePrompt = ['redacted', 'public_safe'].includes(tier)
+      ? parseRemoveObjects(p.data.removeObjects).join(', ')
+      : '';
 
     const photo = await db.get<{ id: number; owner_id: number; title: string }>(
       'SELECT id, owner_id, title FROM photos WHERE id = ? AND deleted = 0',
@@ -41,30 +48,32 @@ router.post('/', async (req, res, next) => {
     );
 
     const expiresAt = expiresInHours ? Date.now() + expiresInHours * 3600_000 : null;
-   const existingShare = await db.get<{ id: number }>(
-  `SELECT id FROM shares WHERE photo_id = ? AND (
-     (viewer_id IS NOT NULL AND viewer_id = ?) OR
-     (viewer_id IS NULL AND viewer_email = ?)
-   )`,
-  photoId, existingViewer?.id ?? -1, viewerEmail
-);
 
-if (existingShare) {
-  await db.run(
-    `UPDATE shares SET tier = ?, blur_faces_json = ?, revoked = 0, expires_at = ? WHERE id = ?`,
-    tier, JSON.stringify(blurFaceIndexes ?? []), expiresAt, existingShare.id
-  );
-} else {
-  await db.run(
-    `INSERT INTO shares (photo_id, viewer_id, viewer_email, tier, blur_faces_json, revoked, expires_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?)`,
-    photoId, existingViewer?.id ?? null, viewerEmail, tier, JSON.stringify(blurFaceIndexes ?? []), expiresAt
-  );
-}
-   
-    await logEvent(photoId, 'shared', req.user!.id, { viewerEmail, tier });
+    await db.run(
+      `INSERT INTO shares (photo_id, viewer_id, viewer_email, tier, blur_faces_json, revoked, expires_at, remove_prompt)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+       ON CONFLICT(photo_id, viewer_email) DO UPDATE SET
+         viewer_id = excluded.viewer_id,
+         tier = excluded.tier,
+         blur_faces_json = excluded.blur_faces_json,
+         revoked = 0,
+         expires_at = excluded.expires_at,
+         remove_prompt = excluded.remove_prompt`,
+      photoId,
+      existingViewer?.id ?? null,
+      viewerEmail,
+      tier,
+      JSON.stringify(blurFaceIndexes ?? []),
+      expiresAt,
+      removePrompt || null
+    );
 
-    // don't let a mail failure break the share
+    await logEvent(photoId, 'shared', req.user!.id, {
+      viewerEmail,
+      tier,
+      ...(removePrompt ? { aiRemoved: removePrompt } : {}),
+    });
+
     Promise.resolve(sendShareNotification(viewerEmail, photo.title)).catch((err) =>
       console.error('share notification failed:', err)
     );

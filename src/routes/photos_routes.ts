@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
-import { upload } from '../middleware/upload.js';
-import { uploadPhoto, ownerPreviewUrl } from '../services/cloudinary_service';
+import { upload, MAX_IMAGE_BYTES } from '../middleware/upload.js';
+import { uploadPhoto, ownerPreviewUrl, type MediaType } from '../services/cloudinary_service';
 import { signRecord, unsealSecretKey } from '../services/crypto_service';
 import { perceptualHash } from '../services/hash_service';
 import { logEvent } from '../services/audit_service';
@@ -13,12 +13,20 @@ router.use(requireAuth, requireVerified);
 
 router.post('/', upload.single('photo'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const isVideo = req.file.mimetype.startsWith('video/');
+    const mediaType: MediaType = isVideo ? 'video' : 'image';
+
+    if (!isVideo && req.file.size > MAX_IMAGE_BYTES) {
+      return res.status(400).json({ error: 'Images must be under 10 MB' });
+    }
 
     const ownerId = req.user!.id;
     const title = String(req.body.title ?? req.file.originalname).slice(0, 100);
     const sha256 = createHash('sha256').update(req.file.buffer).digest('hex');
-    const phash = await perceptualHash(req.file.buffer);
+    // Perceptual hashing works on image pixels only
+    const phash = isVideo ? null : await perceptualHash(req.file.buffer);
 
     const owner = await db.get<{ dsa_secret_enc: string }>(
       'SELECT dsa_secret_enc FROM users WHERE id = ?',
@@ -27,7 +35,7 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
     if (!owner) return res.status(404).json({ error: 'Owner not found' });
 
     // Upload first, so the signed record can reference the Cloudinary asset
-    const cloud = await uploadPhoto(req.file.buffer, { ownerId, title });
+    const cloud = await uploadPhoto(req.file.buffer, { ownerId, title, mediaType });
 
     // Digital signature only (no encryption)
     const dsaSecretKey = unsealSecretKey(owner.dsa_secret_enc);
@@ -35,20 +43,22 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
       sha256,
       ownerId,
       publicId: cloud.publicId,
+      mediaType,
       at: Date.now(),
     });
     const signature = signRecord(dsaSecretKey, record);
 
     const info = await db.run(
-      `INSERT INTO photos (owner_id, title, cloud_public_id, sha256, phash, signature, faces_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO photos (owner_id, title, cloud_public_id, sha256, phash, signature, faces_json, media_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ownerId,
       title,
       cloud.publicId,
       sha256,
       phash,
       signature.toString('base64'),
-      JSON.stringify(cloud.faces)
+      JSON.stringify(cloud.faces ?? []),
+      mediaType
     );
 
     await logEvent(Number(info.lastInsertRowid), 'uploaded', ownerId);
@@ -56,10 +66,11 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
     res.status(201).json({
       id: info.lastInsertRowid,
       title,
-      faces: cloud.faces,
+      mediaType,
+      faces: cloud.faces ?? [],
       width: cloud.width,
       height: cloud.height,
-      previewUrl: ownerPreviewUrl(cloud.publicId),
+      previewUrl: ownerPreviewUrl(cloud.publicId, 500, mediaType),
     });
   } catch (e) {
     next(e);
@@ -72,22 +83,27 @@ router.get('/mine', async (req, res, next) => {
       id: number;
       title: string;
       cloud_public_id: string;
-      faces_json: string;
+      faces_json: string | null;
+      media_type: string | null;
       created_at: number;
     }>(
-      `SELECT id, title, cloud_public_id, faces_json, created_at
+      `SELECT id, title, cloud_public_id, faces_json, media_type, created_at
        FROM photos WHERE owner_id = ? AND deleted = 0 ORDER BY created_at DESC`,
       req.user!.id
     );
 
     res.json({
-      photos: rows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        faces: JSON.parse(r.faces_json ?? '[]'),
-        createdAt: r.created_at,
-        previewUrl: ownerPreviewUrl(r.cloud_public_id, 400),
-      })),
+      photos: rows.map((r) => {
+        const mediaType: MediaType = r.media_type === 'video' ? 'video' : 'image';
+        return {
+          id: r.id,
+          title: r.title,
+          mediaType,
+          faces: JSON.parse(r.faces_json ?? '[]'),
+          createdAt: r.created_at,
+          previewUrl: ownerPreviewUrl(r.cloud_public_id, 400, mediaType),
+        };
+      }),
     });
   } catch (e) {
     next(e);
