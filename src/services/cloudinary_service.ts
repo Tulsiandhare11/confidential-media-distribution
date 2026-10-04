@@ -74,7 +74,7 @@ export function ownerPreviewUrl(
   if (mediaType === 'video') return videoPosterUrl(publicId, width);
   return cloudinary.url(publicId, {
     resource_type: 'image',
-    type: 'private',
+    type: 'authenticate',
     sign_url: true,
     secure: true,
     transformation: [{ width, crop: 'limit' }, { quality: 'auto', fetch_format: 'auto' }],
@@ -164,7 +164,7 @@ export function viewerUrl(
 
   return cloudinary.url(publicId, {
     resource_type: 'image',
-    type: 'private',
+    type: 'authenticate',
     sign_url: true,
     secure: true,
     transformation,
