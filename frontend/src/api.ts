@@ -399,8 +399,8 @@ function normalizeSharedWithMe(raw: unknown): SharedWithMe {
   const photo = obj(o.photo);
   const sender = obj(first(o, 'sender', 'owner'));
   return {
-    id: str(first(o, 'id', '_id', 'shareId')),
-    photoId: str(first(o, 'photoId', 'photo_id') ?? first(photo, 'id', '_id')),
+   id: str(first(o, 'id', '_id', 'shareId', 'shareid')),
+    photoId: str(first(o, 'photoId', 'photo_id', 'photoid') ?? first(photo, 'id', '_id')),
     photoTitle: str(first(o, 'photoTitle', 'title') ?? photo.title, 'Untitled asset'),
     senderName: str(first(o, 'senderName', 'ownerName') ?? sender.name),
     senderEmail: str(first(o, 'senderEmail', 'ownerEmail') ?? sender.email),
