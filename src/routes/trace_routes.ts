@@ -3,6 +3,7 @@ import { db } from '../db';
 import { requireAuth, requireVerified } from '../middleware/auth';
 import { upload } from '../middleware/upload.js';
 import { extractId } from '../services/stego_service';
+import { logEvent } from '../services/audit_service';
 
 const router = Router();
 router.use(requireAuth, requireVerified);
@@ -23,12 +24,16 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
     }
 
     const share = await db.get<{
-      photo_id: number;
+      shareId: number;
+      photoId: number;
+      ownerId: number;
+      tier: string;
       title: string;
       viewerName: string;
       viewerEmail: string;
     }>(
-      `SELECT s.photo_id, p.title,
+      `SELECT s.id AS "shareId", s.photo_id AS "photoId", s.tier,
+              p.title, p.owner_id AS "ownerId",
               COALESCE(u.name, '(pending signup)') AS "viewerName",
               COALESCE(u.email, s.viewer_email) AS "viewerEmail"
        FROM shares s
@@ -38,17 +43,25 @@ router.post('/', upload.single('photo'), async (req, res, next) => {
       shareId
     );
 
-    if (!share) {
+    // Only the photo's owner may learn who a copy was issued to
+    if (!share || share.ownerId !== req.user!.id) {
       return res.json({
         result: 'unknown_share',
-        message: 'Watermark found but no matching share record.',
+        message: 'Watermark found, but it does not match a share you own.',
       });
     }
 
+    await logEvent(share.photoId, 'traced', req.user!.id, {
+      shareId: share.shareId,
+      recipient: share.viewerEmail,
+    });
+
     res.json({
       result: 'traced',
-      message: `This copy was shared with ${share.viewerName}.`,
+      message: `This copy was issued to ${share.viewerName}.`,
       photoTitle: share.title,
+      shareId: share.shareId,
+      tier: share.tier,
       viewer: { name: share.viewerName, email: share.viewerEmail },
     });
   } catch (e) {
