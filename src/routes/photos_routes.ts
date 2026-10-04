@@ -7,6 +7,7 @@ import { uploadPhoto, ownerPreviewUrl, type MediaType } from '../services/cloudi
 import { signRecord, unsealSecretKey } from '../services/crypto_service';
 import { perceptualHash } from '../services/hash_service';
 import { logEvent } from '../services/audit_service';
+import { viewerUrl, fetchTransformedImage } from '../services/cloudinary_service.js';
 
 const router = Router();
 router.use(requireAuth, requireVerified);
@@ -109,7 +110,47 @@ router.get('/mine', async (req, res, next) => {
     next(e);
   }
 });
+router.get('/:photoId/preview', async (req, res, next) => {
+  try {
+    const photoId = Number(req.params.photoId);
+    const viewerId = req.user!.id;
 
+    const photo = await db.get<{ id: number; owner_id: number; cloud_public_id: string; faces_json: string | null }>(
+      'SELECT id, owner_id, cloud_public_id, faces_json FROM photos WHERE id = ?',
+      photoId
+    );
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    if (photo.owner_id !== viewerId) return res.status(403).json({ error: 'Not your photo' });
+
+    const tier = (req.query.tier as string) || 'blurred';
+    const removeObjectsRaw = (req.query.removeObjects as string) || '';
+    const removeObjects = removeObjectsRaw
+      ? removeObjectsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+    const faces: number[][] = JSON.parse(photo.faces_json ?? '[]');
+    const blurIndexes = req.query.blurFaceIndexes
+      ? String(req.query.blurFaceIndexes).split(',').map(Number).filter((n) => !isNaN(n))
+      : [];
+    const blurRegions = blurIndexes.length ? blurIndexes.map((i) => faces[i]).filter(Boolean) : undefined;
+
+    const cloudUrl = viewerUrl(photo.cloud_public_id, {
+      blurAll: tier === 'blurred' && !blurRegions,
+      blurRegions,
+      lowQuality: tier === 'public_safe',
+      removeObjects: tier === 'redacted' || tier === 'public_safe' ? removeObjects : undefined,
+      watermarkName: 'Preview',
+      forcePng: true,
+      maxWidth: 800,
+    });
+
+    const imageBuffer = await fetchTransformedImage(cloudUrl);
+    res.set('Content-Type', 'image/png');
+    res.send(imageBuffer);
+  } catch (e) {
+    next(e);
+  }
+});
 router.delete('/:photoId', async (req, res, next) => {
   try {
     const photoId = Number(req.params.photoId);
