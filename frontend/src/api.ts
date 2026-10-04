@@ -266,6 +266,20 @@ export async function getAudit(photoId: string): Promise<AuditEvent[]> {
 }
 
 export async function verifyMedia(file: File): Promise<VerifyResponse> {
+  if (file.type.startsWith('video/')) {
+    throw new ApiError(
+      'Verify & Trace works on images. For a leaked video, read the name and share ID shown on screen.',
+      400
+    );
+  }
+
+  // 1. Look for the hidden recipient ID first
+  const traceForm = new FormData();
+  traceForm.append('photo', file);
+  const traced = obj(await request('/trace', { method: 'POST', form: traceForm }));
+  if (str(traced.result) === 'traced') return normalizeVerify(traced);
+
+  // 2. No recipient ID found: compare against the vault
   const form = new FormData();
   form.append('photo', file);
   const data = await request('/verify', { method: 'POST', form });
