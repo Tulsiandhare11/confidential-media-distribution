@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, KeyRoundIcon, LoaderCircleIcon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { createShare, errorMessage } from '../../api';
@@ -26,6 +26,23 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
   const strongTier = tier === 'redacted' || tier === 'public_safe';
   const showRemoval = !isVideo && strongTier;
   const removal = showRemoval ? removeObjects.trim() : '';
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (isVideo) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams({
+        tier,
+        removeObjects: removal,
+        blurFaceIndexes: protectedFaceIndexes.join(','),
+      });
+      setPreviewUrl(`/api/photos/${photoId}/preview?${params}&t=${Date.now()}`);
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [tier, removal, protectedFaceIndexes, photoId, isVideo]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +75,12 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
         Choose who sees it
       </h2>
 
+      {!isVideo && previewUrl && (
+        <div className="my-4 overflow-hidden rounded-2xl bg-cream-200">
+          <img src={previewUrl} alt="Live preview of this share" className="w-full" />
+        </div>
+      )}
+
       <form onSubmit={submit} className="mt-5 space-y-5">
         <div>
           <label htmlFor="recipient" className="text-sm font-bold text-ink">
@@ -71,7 +94,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
             className="field mt-1.5" />
-
         </div>
 
         <fieldset>
@@ -85,7 +107,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
                   className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition-[border-color,box-shadow,background-color] duration-150 ${
                   selected ? 'glow-active border-terracotta bg-cream-50' : 'border-cream-300 hover:border-taupe-300'}`
                   }>
-
                   <input
                     type="radio"
                     name="tier"
@@ -93,7 +114,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
                     checked={selected}
                     onChange={() => setTier(t.value)}
                     className="mt-1 accent-espresso" />
-
                   <span className="min-w-0">
                     <span className="flex items-center gap-1.5 text-sm font-extrabold text-ink">
                       {t.label}
@@ -101,8 +121,8 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
                     </span>
                     <span className="block text-xs text-taupe-700">{t.description}</span>
                   </span>
-                </label>);
-
+                </label>
+              );
             })}
           </div>
         </fieldset>
@@ -119,7 +139,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
             onChange={(e) => setRemoveObjects(e.target.value)}
             placeholder="license plates, name badge"
             className="field mt-1.5" />
-
             <p className="mt-1.5 text-xs text-taupe-700">
               Separate items with commas. They are removed from this recipient's copy.
             </p>
@@ -137,7 +156,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
                 value={expiresInHours}
                 onChange={(e) => setExpiresInHours(Number(e.target.value))}
                 className="field appearance-none pr-9">
-
                 {expiryOptions.map((o) =>
                 <option key={o.hours} value={o.hours}>
                     {o.label}
@@ -157,7 +175,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
                 value={viewLimit ?? ''}
                 onChange={(e) => setViewLimit(e.target.value === '' ? null : Number(e.target.value))}
                 className="field appearance-none pr-9">
-
                 {viewLimitOptions.map((o) =>
                 <option key={o.label} value={o.value ?? ''}>
                     {o.label}
@@ -188,6 +205,6 @@ export function ShareForm({ photoId, protectedFaceIndexes, isVideo = false, onSh
           {submitting ? 'Sharing…' : 'Send secure share'}
         </button>
       </form>
-    </section>);
-
+    </section>
+  );
 }
